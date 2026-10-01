@@ -16,7 +16,7 @@ Subscription businesses lose 20–30% of their customer base annually to churn. 
 
 ## Dataset
 
-**IBM Telco Customer Churn** — 7,043 real telecom customers, 20 features, 26.5% churn rate.
+**IBM Telco Customer Churn** — 7,043 customer records, 19 predictor columns, 26.5% churn rate.
 
 Source: [IBM Sample Data Sets](https://github.com/IBM/telco-customer-churn-on-icp4d)
 
@@ -39,8 +39,6 @@ churn_platform/
 │   └── utils.py                     # Logging, paths, config
 ├── app/
 │   └── dashboard.py                 # Streamlit 4-page dashboard
-├── scripts/
-│   └── generate_data.py             # Synthetic data generator (optional)
 ├── notebooks/
 │   └── eda.ipynb                    # Exploratory data analysis
 ├── tests/
@@ -84,7 +82,7 @@ XGBoostClassifier
                     └── MLflow: params, metrics, plots, model artefact
 ```
 
-**Note on methodology:** SMOTE is intentionally not used. Applying SMOTE before the train/test split leaks synthetic samples into the test set, inflating AUC by ~15 points. Instead, `scale_pos_weight` is tuned by Optuna around the true neg/pos ratio (~2.77) to handle class imbalance without contaminating evaluation.
+**Note on methodology:** SMOTE is not used. Optuna tunes `scale_pos_weight` around the training-set class ratio to handle class imbalance while keeping validation and test data unchanged.
 
 ### Evaluation (on clean 20% holdout)
 

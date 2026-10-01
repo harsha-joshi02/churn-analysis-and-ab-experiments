@@ -20,9 +20,7 @@ Advantages over frequentist NHST:
 """
 from __future__ import annotations
 
-import dataclasses
-import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Any
 
@@ -35,7 +33,6 @@ from src.utils import get_logger
 
 logger = get_logger(__name__)
 
-_RNG = np.random.default_rng(42)
 _N_MC = 60_000  # Monte-Carlo samples for posterior integrals
 
 

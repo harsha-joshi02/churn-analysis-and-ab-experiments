@@ -24,13 +24,6 @@ _RENAME_MAP = {
     "Churn":           "churn",
 }
 
-# Yes/No binary columns → 1/0 (also handles "No phone service" / "No internet service")
-_BINARY_COLS = [
-    "Partner", "Dependents", "PhoneService", "PaperlessBilling",
-    "MultipleLines", "OnlineSecurity", "OnlineBackup",
-    "DeviceProtection", "TechSupport", "StreamingTV", "StreamingMovies",
-]
-
 _SERVICE_COLS = [
     "phone_service", "multiple_lines", "online_security", "online_backup",
     "device_protection", "tech_support", "streaming_tv", "streaming_movies",
@@ -79,7 +72,6 @@ def load_raw_data(path: Path = RAW_DATA_PATH) -> pd.DataFrame:
         "TechSupport": "tech_support",
         "StreamingTV": "streaming_tv",
         "StreamingMovies": "streaming_movies",
-        "gender": "gender",
     }
     df = df.rename(columns=binary_rename)
 
@@ -143,8 +135,6 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def prepare_train_data(
     df: pd.DataFrame,
-    apply_smote: bool = False,
-    random_state: int = 42,
 ) -> Tuple[pd.DataFrame, pd.Series]:
     """Return (X, y) ready for model training."""
     df = build_features(df)

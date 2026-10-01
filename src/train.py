@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import pickle
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -219,11 +218,7 @@ def train_pipeline(n_trials: int = 20) -> tuple[xgb.XGBClassifier, list[str], di
     logger.info("Loading raw data …")
     raw_df = load_raw_data(RAW_DATA_PATH)
 
-    # No SMOTE — use scale_pos_weight in XGBoost so probabilities stay calibrated
-    # to the real class distribution (26% churn). SMOTE was removed because it
-    # trains on 50/50 data but evaluates on 26/74 real data, hurting probability
-    # calibration and AUC on the true holdout.
-    X_raw, y_raw = prepare_train_data(raw_df, apply_smote=False)
+    X_raw, y_raw = prepare_train_data(raw_df)
     feature_names = list(X_raw.columns)
 
     # Stratified splits: 60 / 20 / 20  (train / val / test)

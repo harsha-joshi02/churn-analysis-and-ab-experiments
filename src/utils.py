@@ -38,7 +38,6 @@ MLFLOW_EXPERIMENT_NAME: str = os.getenv(
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 RAW_DATA_PATH = BASE_DIR / "data" / "raw" / "telco_churn.csv"
-PROCESSED_DATA_PATH = BASE_DIR / "data" / "processed" / "features.parquet"
 MODEL_PATH = BASE_DIR / "models" / "churn_model.pkl"
 TEST_PREDS_PATH = BASE_DIR / "models" / "test_predictions.parquet"
 PLOTS_DIR = BASE_DIR / "models" / "plots"

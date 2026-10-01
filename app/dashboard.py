@@ -28,7 +28,6 @@ from src.predict import load_model, load_predictions, segment_summary, get_top_c
 from src.experiments import (
     ExperimentData,
     BayesianResult,
-    run_bayesian_ab_test,
     simulate_discount_experiment,
     save_experiment_to_db,
     get_all_experiments,
@@ -126,7 +125,7 @@ def _setup_warning():
         "**Model not trained yet.**  Run the setup pipeline first:\n\n"
         "```bash\n"
         "cd churn_platform\n"
-        "python scripts/generate_data.py\n"
+        "make data\n"
         "python -m src.train\n"
         "```",
         icon="⚠️",
@@ -271,7 +270,6 @@ if page == "🏠  Churn Overview":
     high_risk_n = int((preds["risk_segment"] == "High").sum())
     med_risk_n = int((preds["risk_segment"] == "Medium").sum())
     avg_tenure = preds["tenure"].mean()
-    avg_charge = preds["monthly_charges"].mean()
     monthly_at_risk = preds.loc[preds["risk_segment"] == "High", "monthly_charges"].sum()
 
     # ── KPI row ──────────────────────────────────────────────────────────────
