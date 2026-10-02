@@ -28,6 +28,7 @@ from src.utils import (  # noqa: E402
     HOLDOUT_PREDICTIONS_PATH,
     MODEL_PATH,
     PLOTS_DIR,
+    RAW_DATA_PATH,
 )
 from src.predict import (  # noqa: E402
     RISK_BINS,
@@ -134,12 +135,8 @@ def _load_holdout_preds() -> pd.DataFrame:
     return load_holdout_predictions(HOLDOUT_PREDICTIONS_PATH)
 
 
-def _model_ready() -> bool:
-    return (
-        MODEL_PATH.exists()
-        and CUSTOMER_SCORES_PATH.exists()
-        and HOLDOUT_PREDICTIONS_PATH.exists()
-    )
+def _artifacts_ready(*paths: Path) -> bool:
+    return all(path.exists() for path in paths)
 
 
 def _setup_warning():
@@ -203,7 +200,7 @@ def _render_experiment_result(exp_data: ExperimentData, result: BayesianResult) 
         legend=dict(x=0.01, y=0.95),
         height=380,
     )
-    st.plotly_chart(fig_post, use_container_width=True)
+    st.plotly_chart(fig_post, width="stretch")
 
     p = result.prob_treatment_beats_control
     if p >= 0.95:
@@ -240,7 +237,7 @@ def _render_history_row(exp: dict, row_key: str) -> None:
             fig.update_layout(barmode="overlay", paper_bgcolor="rgba(0,0,0,0)",
                               plot_bgcolor="rgba(0,0,0,0)", font_color="#c9d6e3",
                               height=280, margin=dict(t=20, b=10))
-            st.plotly_chart(fig, use_container_width=True, key=f"history_posterior_{row_key}")
+            st.plotly_chart(fig, width="stretch", key=f"history_posterior_{row_key}")
 
 
 # ── Sidebar navigation ────────────────────────────────────────────────────────
@@ -281,7 +278,7 @@ if page == "🏠  Churn Overview":
     st.title("Churn Overview")
     st.markdown("*High-level KPIs and segment breakdown across the full customer base.*")
 
-    if not _model_ready():
+    if not _artifacts_ready(CUSTOMER_SCORES_PATH):
         _setup_warning()
         st.stop()
 
@@ -298,10 +295,20 @@ if page == "🏠  Churn Overview":
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Total Customers", f"{total:,}")
     c2.metric("Avg Churn Prob", f"{churn_rate:.1%}")
-    c3.metric("High Risk", f"{high_risk_n:,}", f"{high_risk_n/total:.1%} of base")
-    c4.metric("Medium Risk", f"{med_risk_n:,}", f"{med_risk_n/total:.1%} of base")
+    c3.metric(
+        "High Risk",
+        f"{high_risk_n:,}",
+        f"{high_risk_n/total:.1%} of base",
+        delta_color="off",
+    )
+    c4.metric(
+        "Medium Risk",
+        f"{med_risk_n:,}",
+        f"{med_risk_n/total:.1%} of base",
+        delta_color="off",
+    )
     c5.metric("Avg Tenure (mo)", f"{avg_tenure:.1f}")
-    c6.metric("Monthly Revenue at Risk", f"${monthly_at_risk:,.0f}")
+    c6.metric("High-Risk Monthly Revenue", f"${monthly_at_risk:,.0f}")
 
     st.markdown("---")
 
@@ -329,7 +336,7 @@ if page == "🏠  Churn Overview":
             margin=dict(t=10, b=10, l=10, r=10),
             height=300,
         )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, width="stretch")
 
     # ── Avg KPIs by segment ───────────────────────────────────────────────────
     with col_right:
@@ -375,7 +382,7 @@ if page == "🏠  Churn Overview":
             height=320,
             margin=dict(t=10),
         )
-        st.plotly_chart(fig_hist, use_container_width=True)
+        st.plotly_chart(fig_hist, width="stretch")
 
     # ── Avg tenure by segment bar chart ──────────────────────────────────────
     with col_b:
@@ -398,7 +405,7 @@ if page == "🏠  Churn Overview":
             height=320,
             margin=dict(t=10),
         )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width="stretch")
 
     # ── Contract type × churn ─────────────────────────────────────────────────
     st.markdown('<p class="section-header">Churn Rate by Contract Type</p>', unsafe_allow_html=True)
@@ -427,7 +434,7 @@ if page == "🏠  Churn Overview":
             height=280,
             margin=dict(t=10),
         )
-        st.plotly_chart(fig_ct, use_container_width=True)
+        st.plotly_chart(fig_ct, width="stretch")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -438,7 +445,7 @@ elif page == "📈  Model Performance":
     st.title("Model Performance")
     st.markdown("*XGBoost trained with Optuna HPO · Evaluated on held-out test set*")
 
-    if not _model_ready():
+    if not _artifacts_ready(MODEL_PATH, HOLDOUT_PREDICTIONS_PATH):
         _setup_warning()
         st.stop()
 
@@ -492,7 +499,7 @@ elif page == "📈  Model Performance":
             legend=dict(x=0.6, y=0.1),
             height=420,
         )
-        st.plotly_chart(fig_roc, use_container_width=True)
+        st.plotly_chart(fig_roc, width="stretch")
 
     # ── PR Curve ──────────────────────────────────────────────────────────────
     with tab_pr:
@@ -525,7 +532,7 @@ elif page == "📈  Model Performance":
             legend=dict(x=0.6, y=0.9),
             height=420,
         )
-        st.plotly_chart(fig_pr, use_container_width=True)
+        st.plotly_chart(fig_pr, width="stretch")
 
     # ── Feature Importance ────────────────────────────────────────────────────
     with tab_fi:
@@ -552,13 +559,17 @@ elif page == "📈  Model Performance":
             height=460,
             margin=dict(l=130),
         )
-        st.plotly_chart(fig_fi, use_container_width=True)
+        st.plotly_chart(fig_fi, width="stretch")
 
     # ── SHAP Summary ──────────────────────────────────────────────────────────
     with tab_shap:
         shap_img = PLOTS_DIR / "shap_summary.png"
         if shap_img.exists():
-            st.image(str(shap_img), caption="SHAP Summary Plot (300-sample subset)", use_column_width=True)
+            st.image(
+                str(shap_img),
+                caption="SHAP Summary Plot (300-sample subset)",
+                width="stretch",
+            )
         else:
             st.info("Run training to generate the SHAP summary plot.")
 
@@ -571,7 +582,7 @@ elif page == "🔍  Customer Explorer":
     st.title("Customer Explorer")
     st.markdown("*Filter, browse, and drill into individual churn risk profiles.*")
 
-    if not _model_ready():
+    if not _artifacts_ready(MODEL_PATH, CUSTOMER_SCORES_PATH, RAW_DATA_PATH):
         _setup_warning()
         st.stop()
 
@@ -615,7 +626,7 @@ elif page == "🔍  Customer Explorer":
 
     st.dataframe(
         table_df.head(200),
-        use_container_width=True,
+        width="stretch",
         height=320,
         column_config={
             "customer_id": "Customer ID",
@@ -635,12 +646,16 @@ elif page == "🔍  Customer Explorer":
     from src.features import load_raw_data
     raw_df = load_raw_data()
 
-    customer_options = filtered["customer_id"].tolist()
+    customer_options = (
+        filtered.sort_values("churn_probability", ascending=False)["customer_id"]
+        .astype(str)
+        .tolist()
+    )
     if not customer_options:
         st.info("No customers match the current filters.")
         st.stop()
 
-    selected_id = st.selectbox("Select Customer", customer_options[:500])
+    selected_id = st.selectbox("Select Customer", customer_options)
 
     if selected_id:
         cust_row = preds[preds["customer_id"] == selected_id].iloc[0]
@@ -679,9 +694,9 @@ elif page == "🔍  Customer Explorer":
                 paper_bgcolor="rgba(0,0,0,0)",
                 font_color="#c9d6e3",
                 height=260,
-                margin=dict(t=30, b=10, l=20, r=20),
+                margin=dict(t=30, b=10, l=35, r=35),
             )
-            st.plotly_chart(fig_gauge, use_container_width=True)
+            st.plotly_chart(fig_gauge, width="stretch")
 
         with col_info:
             st.markdown(f"**Customer ID:** `{selected_id}`")
@@ -723,7 +738,7 @@ elif page == "🔍  Customer Explorer":
                 height=340,
                 margin=dict(l=140),
             )
-            st.plotly_chart(fig_drivers, use_container_width=True)
+            st.plotly_chart(fig_drivers, width="stretch")
         except Exception as exc:
             st.warning(f"Could not compute SHAP drivers: {exc}")
 
@@ -747,7 +762,7 @@ elif page == "🧪  Experiments":
             icon="⚠️",
         )
 
-    if not _model_ready():
+    if not _artifacts_ready(CUSTOMER_SCORES_PATH):
         _setup_warning()
         st.stop()
 
@@ -774,13 +789,13 @@ elif page == "🧪  Experiments":
 
             with col_f2:
                 discount_lift = st.number_input(
-                    "Assumed Retention Lift from Intervention (%)",
+                    "Assumed Retention Increase (percentage points)",
                     min_value=0.01,
                     max_value=99.0,
                     value=15.0,
                     step=0.01,
                     format="%.2f",
-                    help="Observed or assumed % of additional customers retained due to the intervention.",
+                    help="Absolute increase added to the baseline retention rate.",
                 )
                 prior_alpha = st.number_input("Prior α (Beta prior)", value=1.0, min_value=0.1, step=0.5)
                 prior_beta = st.number_input("Prior β (Beta prior)", value=1.0, min_value=0.1, step=0.5)
@@ -802,6 +817,7 @@ elif page == "🧪  Experiments":
                     # Override with form values
                     exp_data.name = exp_name or exp_data.name
                     exp_data.description = exp_desc or exp_data.description
+                    exp_data.segment = target_segment
                     exp_data.control_description = ctrl_desc
                     exp_data.treatment_description = trt_desc
 

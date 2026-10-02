@@ -89,8 +89,8 @@ def load_raw_data(path: Path = RAW_DATA_PATH) -> pd.DataFrame:
     df["total_charges"] = df["total_charges"].fillna(df["monthly_charges"])
 
     # Churn: "Yes" → 1, "No" → 0
-    if df["churn"].dtype == object:
-        df["churn"] = (df["churn"] == "Yes").astype(int)
+    if not pd.api.types.is_numeric_dtype(df["churn"]):
+        df["churn"] = df["churn"].map({"Yes": 1, "No": 0}).astype(np.int8)
 
     return df
 

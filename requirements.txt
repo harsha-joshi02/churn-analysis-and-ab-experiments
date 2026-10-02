@@ -22,7 +22,7 @@ sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.7
 
 # Dashboard
-streamlit>=1.28.0
+streamlit>=1.52.0
 plotly>=5.18.0
 
 # Visualization

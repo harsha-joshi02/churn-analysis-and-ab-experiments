@@ -18,3 +18,4 @@ def test_gender_encoding_preserves_male_and_female(tmp_path):
     loaded = load_raw_data(path)
 
     assert loaded["gender"].tolist() == [1, 0]
+    assert loaded["churn"].tolist() == [0, 1]
