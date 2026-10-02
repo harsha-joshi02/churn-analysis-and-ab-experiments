@@ -12,7 +12,7 @@ shap>=0.43.0
 optuna>=3.4.0
 
 # Experiment tracking
-mlflow>=2.8.0
+mlflow>=2.8.0,<4
 
 # Statistics / Bayesian A/B testing
 scipy>=1.11.0

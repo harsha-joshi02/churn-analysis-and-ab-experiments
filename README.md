@@ -43,7 +43,7 @@ churn_platform/
 │   └── eda.ipynb                    # Exploratory data analysis
 ├── tests/
 │   └── test_experiments.py          # Unit tests for Bayesian engine
-├── mlruns/                          # MLflow experiment store (git-ignored)
+├── mlruns/                          # Portable MLflow backend + artifacts (git-ignored)
 ├── models/                          # Trained model + plots (git-ignored)
 ├── docker-compose.yml               # PostgreSQL + MLflow services
 ├── Makefile                         # Task automation
@@ -92,6 +92,11 @@ XGBoostClassifier
 | F1 Score | ~0.602 |
 | Avg Precision | ~0.661 |
 
+Training writes two distinct prediction outputs:
+
+- `models/holdout_predictions.parquet` contains only untouched test rows and is used for evaluation metrics.
+- `models/customer_scores.parquet` contains scores for the full customer population and is used by operational dashboard views.
+
 ### Risk Segmentation
 
 | Segment | Churn Probability |
@@ -113,7 +118,8 @@ Retention modelled as Bernoulli(θ)
   Posterior: θ | data ~ Beta(α₀+k, β₀+n-k)
 
 P(treatment > control) = Monte-Carlo integral over posterior samples
-Expected lift          = (treatment_rate - control_rate) / control_rate
+Expected lift          = (treatment posterior mean - control posterior mean)
+                         / control posterior mean
 ```
 
 ### Why Bayesian over Frequentist
@@ -181,7 +187,7 @@ Copy `.env.example` to `.env` (defaults work out of the box with Docker):
 | Variable | Default | Description |
 |---|---|---|
 | `DATABASE_URL` | `postgresql://churn:churnpass@localhost:5432/churn_db` | PostgreSQL connection |
-| `MLFLOW_TRACKING_URI` | `./mlruns` | MLflow backend |
+| `MLFLOW_TRACKING_URI` | `http://localhost:5001` | MLflow tracking server |
 | `MLFLOW_EXPERIMENT_NAME` | `churn_prediction` | MLflow experiment name |
 | `LOG_LEVEL` | `INFO` | Python logging level |
 

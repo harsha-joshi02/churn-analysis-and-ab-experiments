@@ -23,16 +23,29 @@ from sklearn.metrics import roc_curve, precision_recall_curve, roc_auc_score
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from src.utils import MODEL_PATH, PLOTS_DIR, TEST_PREDS_PATH
-from src.predict import load_model, load_predictions, segment_summary, get_top_churn_drivers, RISK_BINS, RISK_LABELS
-from src.experiments import (
+from src.utils import (  # noqa: E402
+    CUSTOMER_SCORES_PATH,
+    HOLDOUT_PREDICTIONS_PATH,
+    MODEL_PATH,
+    PLOTS_DIR,
+)
+from src.predict import (  # noqa: E402
+    RISK_BINS,
+    RISK_LABELS,
+    get_top_churn_drivers,
+    load_customer_scores,
+    load_holdout_predictions,
+    load_model,
+    segment_summary,
+)
+from src.experiments import (  # noqa: E402
     ExperimentData,
     BayesianResult,
     simulate_discount_experiment,
     save_experiment_to_db,
     get_all_experiments,
 )
-from src.db import is_db_available, init_db
+from src.db import is_db_available, init_db  # noqa: E402
 
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -107,8 +120,8 @@ def _load_model():
 
 
 @st.cache_data(show_spinner="Loading predictions …", ttl=300)
-def _load_preds() -> pd.DataFrame:
-    df = load_predictions(TEST_PREDS_PATH)
+def _load_customer_scores() -> pd.DataFrame:
+    df = load_customer_scores(CUSTOMER_SCORES_PATH)
     if "risk_segment" not in df.columns:
         df["risk_segment"] = pd.cut(
             df["churn_probability"], bins=RISK_BINS, labels=RISK_LABELS, right=False
@@ -116,8 +129,17 @@ def _load_preds() -> pd.DataFrame:
     return df
 
 
+@st.cache_data(show_spinner="Loading holdout predictions …", ttl=300)
+def _load_holdout_preds() -> pd.DataFrame:
+    return load_holdout_predictions(HOLDOUT_PREDICTIONS_PATH)
+
+
 def _model_ready() -> bool:
-    return MODEL_PATH.exists() and TEST_PREDS_PATH.exists()
+    return (
+        MODEL_PATH.exists()
+        and CUSTOMER_SCORES_PATH.exists()
+        and HOLDOUT_PREDICTIONS_PATH.exists()
+    )
 
 
 def _setup_warning():
@@ -263,7 +285,7 @@ if page == "🏠  Churn Overview":
         _setup_warning()
         st.stop()
 
-    preds = _load_preds()
+    preds = _load_customer_scores()
 
     total = len(preds)
     churn_rate = preds["churn_probability"].mean()
@@ -420,7 +442,7 @@ elif page == "📈  Model Performance":
         _setup_warning()
         st.stop()
 
-    preds = _load_preds()
+    preds = _load_holdout_preds()
     model, feature_names = _load_model()
 
     # Use churn_probability vs y_true for metric curves
@@ -553,7 +575,7 @@ elif page == "🔍  Customer Explorer":
         _setup_warning()
         st.stop()
 
-    preds = _load_preds()
+    preds = _load_customer_scores()
     model, feature_names = _load_model()
 
     # ── Sidebar filters ───────────────────────────────────────────────────────
@@ -729,7 +751,7 @@ elif page == "🧪  Experiments":
         _setup_warning()
         st.stop()
 
-    preds = _load_preds()
+    preds = _load_customer_scores()
 
     tab_run, tab_history = st.tabs(["▶ Run Experiment", "📋 Experiment History"])
 
@@ -772,15 +794,16 @@ elif page == "🧪  Experiments":
             else:
                 with st.spinner("Running Bayesian simulation …"):
                     exp_data, result = simulate_discount_experiment(
-                        cohort, discount_lift_pct=discount_lift / 100.0
+                        cohort,
+                        discount_lift_pct=discount_lift / 100.0,
+                        prior_alpha=prior_alpha,
+                        prior_beta=prior_beta,
                     )
                     # Override with form values
                     exp_data.name = exp_name or exp_data.name
                     exp_data.description = exp_desc or exp_data.description
                     exp_data.control_description = ctrl_desc
                     exp_data.treatment_description = trt_desc
-                    exp_data.prior_alpha = prior_alpha
-                    exp_data.prior_beta = prior_beta
 
                     if db_ok:
                         try:

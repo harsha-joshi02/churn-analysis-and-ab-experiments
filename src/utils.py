@@ -29,7 +29,7 @@ DATABASE_URL: str = os.getenv(
 # ── MLflow ────────────────────────────────────────────────────────────────────
 MLFLOW_TRACKING_URI: str = os.getenv(
     "MLFLOW_TRACKING_URI",
-    str(BASE_DIR / "mlruns"),
+    "http://localhost:5001",
 )
 MLFLOW_EXPERIMENT_NAME: str = os.getenv(
     "MLFLOW_EXPERIMENT_NAME",
@@ -39,5 +39,6 @@ MLFLOW_EXPERIMENT_NAME: str = os.getenv(
 # ── Paths ─────────────────────────────────────────────────────────────────────
 RAW_DATA_PATH = BASE_DIR / "data" / "raw" / "telco_churn.csv"
 MODEL_PATH = BASE_DIR / "models" / "churn_model.pkl"
-TEST_PREDS_PATH = BASE_DIR / "models" / "test_predictions.parquet"
+HOLDOUT_PREDICTIONS_PATH = BASE_DIR / "models" / "holdout_predictions.parquet"
+CUSTOMER_SCORES_PATH = BASE_DIR / "models" / "customer_scores.parquet"
 PLOTS_DIR = BASE_DIR / "models" / "plots"

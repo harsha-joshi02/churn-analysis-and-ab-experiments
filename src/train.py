@@ -3,7 +3,7 @@ XGBoost churn classifier:
   - Optuna hyperparameter search (n_trials configurable, default 20)
   - MLflow experiment tracking with full artefact logging
   - SHAP summary, ROC, PR, and confusion-matrix plots saved to disk + MLflow
-  - Test-set predictions saved for dashboard re-use
+  - Holdout predictions and full-population customer scores saved separately
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ import pandas as pd
 import seaborn as sns
 import shap
 import xgboost as xgb
+from mlflow.models import infer_signature
 from sklearn.metrics import (
     average_precision_score,
     classification_report,
@@ -39,12 +40,13 @@ from src.features import (
     prepare_train_data,
 )
 from src.utils import (
+    CUSTOMER_SCORES_PATH,
+    HOLDOUT_PREDICTIONS_PATH,
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_TRACKING_URI,
     MODEL_PATH,
     PLOTS_DIR,
     RAW_DATA_PATH,
-    TEST_PREDS_PATH,
     get_logger,
 )
 
@@ -234,12 +236,34 @@ def train_pipeline(n_trials: int = 20) -> tuple[xgb.XGBClassifier, list[str], di
         "Splits — train: %d | val: %d | test: %d | neg/pos ratio: %.2f",
         len(X_train), len(X_val), len(X_test), neg_pos_ratio,
     )
-    logger.info(
-        "Splits — train: %d | val: %d | test: %d",
-        len(X_train), len(X_val), len(X_test),
-    )
+    with mlflow.start_run(run_name="xgb_churn_training") as run:
+        mlflow.set_tags(
+            {
+                "pipeline": "churn_training",
+                "model_stage": "candidate",
+                "target": "churn",
+                "positive_class": "1",
+                "split_strategy": "stratified_60_20_20",
+                "split_random_state": "42",
+            }
+        )
 
-    with mlflow.start_run(run_name="xgb_churn_optuna") as run:
+        # Record which split was used for tuning, fitting, and evaluation.
+        for context, X_split, y_split in (
+            ("hyperparameter_training", X_train, y_train),
+            ("hyperparameter_validation", X_val, y_val),
+            ("training", X_trainval, y_trainval),
+            ("evaluation", X_test, y_test),
+        ):
+            split_df = X_split.copy()
+            split_df["churn"] = y_split
+            dataset = mlflow.data.from_pandas(
+                split_df,
+                source=str(RAW_DATA_PATH),
+                targets="churn",
+                name=f"telco_churn_{context}",
+            )
+            mlflow.log_input(dataset, context=context)
         # ── HPO ───────────────────────────────────────────────────────────────
         mlflow.log_params(
             {
@@ -296,36 +320,57 @@ def train_pipeline(n_trials: int = 20) -> tuple[xgb.XGBClassifier, list[str], di
         _save_feature_importance(model, feature_names, fi_path)
 
         for p in [cm_path, roc_path, pr_path, shap_path, fi_path]:
-            mlflow.log_artifact(str(p))
+            mlflow.log_artifact(str(p), artifact_path="evaluation/plots")
 
-        mlflow.xgboost.log_model(model, artifact_path="xgb_churn_model")
+        input_example = X_trainval.head(5)
+        signature = infer_signature(input_example, model.predict(input_example))
+        mlflow.xgboost.log_model(
+            model,
+            artifact_path="model",
+            signature=signature,
+            input_example=input_example,
+        )
 
         # ── Persist model artefact ────────────────────────────────────────────
         with open(MODEL_PATH, "wb") as fh:
-            pickle.dump({"model": model, "feature_names": feature_names}, fh)
+            pickle.dump(
+                {
+                    "model": model,
+                    "feature_names": feature_names,
+                    "mlflow_run_id": run.info.run_id,
+                },
+                fh,
+            )
         logger.info("Model saved → %s", MODEL_PATH)
 
-        # ── Save test predictions for dashboard ───────────────────────────────
-        # Merge with original (pre-SMOTE) test data for customer IDs
+        # ── Evaluation predictions and full-customer scores ────────────────────
+        # Keep unbiased evaluation rows distinct from full-population scores.
         raw_feat = build_features(raw_df)
         feat_cols = get_feature_columns(raw_feat)
         raw_X = raw_feat[feat_cols].astype(float)
         raw_proba = model.predict_proba(raw_X)[:, 1]
 
-        preds_df = raw_df[["customer_id", "churn"]].copy()
-        preds_df["churn_probability"] = raw_proba
-        preds_df["y_true"] = raw_df["churn"].values
+        holdout_df = raw_df.loc[X_test.index, ["customer_id"]].copy()
+        holdout_df["y_true"] = y_test.to_numpy()
+        holdout_df["churn_probability"] = y_proba
+        holdout_df["y_pred"] = y_pred
+        holdout_df["model_run_id"] = run.info.run_id
 
-        # Re-add numeric cols for the dashboard
-        for col in ["tenure", "monthly_charges", "contract_type", "num_products",
-                    "support_tickets", "last_login_days_ago", "payment_method",
-                    "internet_service"]:
-            if col in raw_df.columns:
-                preds_df[col] = raw_df[col].values
+        customer_scores_df = raw_df.copy()
+        for col in raw_feat.columns.difference(raw_df.columns):
+            customer_scores_df[col] = raw_feat[col]
+        customer_scores_df["churn_probability"] = raw_proba
+        customer_scores_df["model_run_id"] = run.info.run_id
 
-        TEST_PREDS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        preds_df.to_parquet(TEST_PREDS_PATH, index=False)
-        logger.info("Test predictions saved → %s", TEST_PREDS_PATH)
+        HOLDOUT_PREDICTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        holdout_df.to_parquet(HOLDOUT_PREDICTIONS_PATH, index=False)
+        customer_scores_df.to_parquet(CUSTOMER_SCORES_PATH, index=False)
+        mlflow.log_artifact(
+            str(HOLDOUT_PREDICTIONS_PATH), artifact_path="evaluation/predictions"
+        )
+        mlflow.log_artifact(str(CUSTOMER_SCORES_PATH), artifact_path="scoring")
+        logger.info("Holdout predictions saved → %s", HOLDOUT_PREDICTIONS_PATH)
+        logger.info("Customer scores saved → %s", CUSTOMER_SCORES_PATH)
 
         metrics = {
             "auc_roc": auc,

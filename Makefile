@@ -43,10 +43,10 @@ train:
 
 experiment:
 	$(PYTHON) -c "\
-from src.predict import load_predictions; \
+from src.predict import load_customer_scores; \
 from src.experiments import simulate_discount_experiment, save_experiment_to_db; \
 from src.db import init_db; \
-preds = load_predictions(); \
+preds = load_customer_scores(); \
 high = preds[preds['risk_segment']=='High']; \
 exp, result = simulate_discount_experiment(high); \
 init_db(); \

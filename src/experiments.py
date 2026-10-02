@@ -64,6 +64,41 @@ class BayesianResult:
     treatment_posterior: dict[str, Any]
 
 
+def _validate_beta_params(alpha: float, beta: float, label: str) -> None:
+    if isinstance(alpha, (bool, np.bool_)) or isinstance(beta, (bool, np.bool_)):
+        raise ValueError(f"{label} alpha and beta must be finite and greater than zero.")
+    try:
+        valid = np.isfinite(alpha) and np.isfinite(beta) and alpha > 0 and beta > 0
+    except (TypeError, ValueError):
+        valid = False
+    if not valid:
+        raise ValueError(f"{label} alpha and beta must be finite and greater than zero.")
+
+
+def validate_experiment(exp: ExperimentData) -> None:
+    """Validate counts and prior parameters before any posterior calculation."""
+    if not isinstance(exp.name, str) or not exp.name.strip():
+        raise ValueError("Experiment name must not be empty.")
+
+    for arm, conversions, trials in (
+        ("control", exp.control_conversions, exp.control_trials),
+        ("treatment", exp.treatment_conversions, exp.treatment_trials),
+    ):
+        if (
+            isinstance(conversions, (bool, np.bool_))
+            or not isinstance(conversions, (int, np.integer))
+            or isinstance(trials, (bool, np.bool_))
+            or not isinstance(trials, (int, np.integer))
+        ):
+            raise TypeError(f"{arm} conversions and trials must be integers.")
+        if conversions < 0 or trials < 0:
+            raise ValueError(f"{arm} conversions and trials must be non-negative.")
+        if conversions > trials:
+            raise ValueError(f"{arm} conversions cannot exceed trials.")
+
+    _validate_beta_params(exp.prior_alpha, exp.prior_beta, "Prior")
+
+
 # ── Core Bayesian maths ───────────────────────────────────────────────────────
 
 def _posterior_params(
@@ -73,6 +108,9 @@ def _posterior_params(
     prior_beta: float = 1.0,
 ) -> tuple[float, float]:
     """Return (α_post, β_post) of the Beta posterior."""
+    _validate_beta_params(prior_alpha, prior_beta, "Prior")
+    if conversions < 0 or trials < 0 or conversions > trials:
+        raise ValueError("Conversions must be between zero and trials.")
     return prior_alpha + conversions, prior_beta + (trials - conversions)
 
 
@@ -85,6 +123,10 @@ def prob_b_beats_a(
     seed: int = 0,
 ) -> float:
     """Monte-Carlo estimate of P(B > A)."""
+    _validate_beta_params(alpha_a, beta_a, "Control posterior")
+    _validate_beta_params(alpha_b, beta_b, "Treatment posterior")
+    if n_samples <= 0:
+        raise ValueError("n_samples must be greater than zero.")
     rng = np.random.default_rng(seed)
     a = beta_dist.rvs(alpha_a, beta_a, size=n_samples, random_state=rng)
     b = beta_dist.rvs(alpha_b, beta_b, size=n_samples, random_state=rng)
@@ -99,13 +141,18 @@ def expected_lift(
     n_samples: int = _N_MC,
     seed: int = 1,
 ) -> float:
-    """Expected relative lift: E[(B − A) / A]."""
-    rng = np.random.default_rng(seed)
-    a = beta_dist.rvs(alpha_a, beta_a, size=n_samples, random_state=rng)
-    b = beta_dist.rvs(alpha_b, beta_b, size=n_samples, random_state=rng)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        lift = np.where(a > 0, (b - a) / a, 0.0)
-    return float(np.mean(lift))
+    """Relative lift between posterior means.
+
+    This is stable even when a valid control posterior has mass close to zero;
+    averaging ``(B - A) / A`` samples is not (and can have infinite expectation).
+    ``n_samples`` and ``seed`` remain accepted for API compatibility.
+    """
+    del n_samples, seed
+    _validate_beta_params(alpha_a, beta_a, "Control posterior")
+    _validate_beta_params(alpha_b, beta_b, "Treatment posterior")
+    control_mean = alpha_a / (alpha_a + beta_a)
+    treatment_mean = alpha_b / (alpha_b + beta_b)
+    return float((treatment_mean - control_mean) / control_mean)
 
 
 def recommend_sample_size(
@@ -134,6 +181,7 @@ def recommend_sample_size(
 
 def run_bayesian_ab_test(exp: ExperimentData) -> BayesianResult:
     """Full Bayesian A/B analysis from an ExperimentData object."""
+    validate_experiment(exp)
     a_alpha, a_beta = _posterior_params(
         exp.control_conversions, exp.control_trials,
         exp.prior_alpha, exp.prior_beta,
@@ -174,6 +222,8 @@ def simulate_discount_experiment(
     high_risk_df: pd.DataFrame,
     discount_lift_pct: float = 0.15,
     seed: int = 42,
+    prior_alpha: float = 1.0,
+    prior_beta: float = 1.0,
 ) -> tuple[ExperimentData, BayesianResult]:
     """
     Simulate a 20%-discount intervention on the High-risk cohort.
@@ -181,6 +231,20 @@ def simulate_discount_experiment(
     Control  : no action (baseline retention = 1 − avg_churn_probability)
     Treatment: discount offer raises retention by `discount_lift_pct`
     """
+    if high_risk_df.empty:
+        raise ValueError("Experiment cohort must not be empty.")
+    if "churn_probability" not in high_risk_df.columns:
+        raise ValueError("Experiment cohort must contain churn_probability.")
+    churn_probabilities = high_risk_df["churn_probability"]
+    if (
+        churn_probabilities.isna().any()
+        or not churn_probabilities.between(0, 1).all()
+    ):
+        raise ValueError("churn_probability values must be between 0 and 1.")
+    if not np.isfinite(discount_lift_pct) or not 0 <= discount_lift_pct <= 1:
+        raise ValueError("discount_lift_pct must be between 0 and 1.")
+    _validate_beta_params(prior_alpha, prior_beta, "Prior")
+
     n = len(high_risk_df)
     n_ctrl = n // 2
     n_trt = n - n_ctrl
@@ -206,6 +270,8 @@ def simulate_discount_experiment(
         control_trials=n_ctrl,
         treatment_conversions=trt_conversions,
         treatment_trials=n_trt,
+        prior_alpha=prior_alpha,
+        prior_beta=prior_beta,
     )
     result = run_bayesian_ab_test(exp)
     logger.info(
@@ -241,8 +307,11 @@ def save_experiment_to_db(exp: ExperimentData, result: BayesianResult) -> None:
         # Upsert config
         existing = db.query(ExperimentConfig).filter_by(name=exp.name).first()
         if existing:
-            for k, v in asdict(exp).items():
-                setattr(existing, k, v)
+            existing.description = exp.description
+            existing.segment = exp.segment
+            existing.control_description = exp.control_description
+            existing.treatment_description = exp.treatment_description
+            existing.config_json = asdict(exp)
             existing.created_at = datetime.utcnow()
         else:
             db.add(cfg)

@@ -11,6 +11,7 @@ from src.experiments import (
     prob_b_beats_a,
     recommend_sample_size,
     run_bayesian_ab_test,
+    simulate_discount_experiment,
 )
 
 
@@ -82,6 +83,13 @@ class TestExpectedLift:
         # A ≈ 40%, B ≈ 60% → lift ≈ 50%
         lift = expected_lift(40.0, 60.0, 60.0, 40.0, n_samples=200_000)
         assert 0.30 < lift < 0.80
+
+    def test_uses_posterior_means(self):
+        lift = expected_lift(1.0, 9.0, 2.0, 8.0)
+        assert lift == pytest.approx(1.0)
+
+    def test_is_stable_for_uniform_control_prior(self):
+        assert expected_lift(1.0, 1.0, 1.0, 1.0) == pytest.approx(0.0)
 
 
 # ── recommend_sample_size tests ───────────────────────────────────────────────
@@ -174,3 +182,37 @@ class TestRunBayesianABTest:
     def test_lift_direction_matches_rates(self):
         result = run_bayesian_ab_test(self._make_exp(ctrl_conv=80, trt_conv=120))
         assert result.expected_lift > 0  # treatment rate > control rate
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("control_conversions", -1),
+            ("control_trials", -1),
+            ("prior_alpha", 0.0),
+            ("prior_beta", float("nan")),
+        ],
+    )
+    def test_rejects_invalid_experiment_values(self, field, value):
+        exp = self._make_exp()
+        setattr(exp, field, value)
+        with pytest.raises(ValueError):
+            run_bayesian_ab_test(exp)
+
+    def test_rejects_more_conversions_than_trials(self):
+        with pytest.raises(ValueError, match="cannot exceed"):
+            run_bayesian_ab_test(self._make_exp(ctrl_conv=401, ctrl_trials=400))
+
+
+def test_simulation_applies_configured_prior():
+    import pandas as pd
+
+    cohort = pd.DataFrame({"churn_probability": [0.7] * 20})
+    exp, result = simulate_discount_experiment(
+        cohort, prior_alpha=4.0, prior_beta=6.0
+    )
+    assert exp.prior_alpha == 4.0
+    assert exp.prior_beta == 6.0
+    assert result.control_posterior["alpha"] == 4.0 + exp.control_conversions
+    assert result.control_posterior["beta"] == 6.0 + (
+        exp.control_trials - exp.control_conversions
+    )

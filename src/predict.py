@@ -5,12 +5,17 @@ import pickle
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 import shap
 
-from src.features import build_features, get_feature_columns, load_raw_data
-from src.utils import MODEL_PATH, RAW_DATA_PATH, TEST_PREDS_PATH, get_logger
+from src.features import build_features, load_raw_data
+from src.utils import (
+    CUSTOMER_SCORES_PATH,
+    HOLDOUT_PREDICTIONS_PATH,
+    MODEL_PATH,
+    RAW_DATA_PATH,
+    get_logger,
+)
 
 logger = get_logger(__name__)
 
@@ -50,15 +55,30 @@ def predict_churn(
     return result
 
 
-def load_predictions(path: Path = TEST_PREDS_PATH) -> pd.DataFrame:
-    """Load the pre-computed full-dataset predictions saved during training."""
+def _load_scored_data(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path)
-    # Re-attach risk segment if not present (backward compat)
     if "risk_segment" not in df.columns:
         df["risk_segment"] = pd.cut(
             df["churn_probability"], bins=RISK_BINS, labels=RISK_LABELS, right=False
         )
     return df
+
+
+def load_customer_scores(path: Path = CUSTOMER_SCORES_PATH) -> pd.DataFrame:
+    """Load scores for the complete customer population."""
+    return _load_scored_data(path)
+
+
+def load_holdout_predictions(
+    path: Path = HOLDOUT_PREDICTIONS_PATH,
+) -> pd.DataFrame:
+    """Load predictions produced only for the untouched evaluation holdout."""
+    return _load_scored_data(path)
+
+
+def load_predictions(path: Path = CUSTOMER_SCORES_PATH) -> pd.DataFrame:
+    """Backward-compatible alias for :func:`load_customer_scores`."""
+    return load_customer_scores(path)
 
 
 def segment_summary(predictions: pd.DataFrame) -> pd.DataFrame:
